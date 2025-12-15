@@ -27,6 +27,30 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+
+def rate_limit(key: str, limit: int, per_seconds: int) -> None:
+    """
+    간단 레이트리밋(세션 단위).
+    key: 제한 그룹 이름
+    limit: 허용 횟수
+    per_seconds: 기간(초)
+    """
+    now = time.time()
+    hist_key = f"_rl_{key}"
+    hist = st.session_state.get(hist_key, [])
+
+    # 기간 밖 기록 제거
+    hist = [t for t in hist if now - t < per_seconds]
+
+    if len(hist) >= limit:
+        wait = int(per_seconds - (now - hist[0])) + 1
+        st.error(f"요청이 너무 많습니다. {wait}초 후 다시 시도하세요.")
+        st.stop()
+
+    hist.append(now)
+    st.session_state[hist_key] = hist
+
+
 # =========================================================
 # 0) 환경 설정 (당신 PC 환경에 맞게 수정)
 # =========================================================
@@ -98,6 +122,17 @@ DEVELOPER_NAME = "언양고 교사 INOMA"  # TODO: 개발자 이름 입력
 # =========================================================
 
 st.set_page_config(page_title="학생부 컨설팅 보고서", layout="wide")
+
+import streamlit as st
+
+ACCESS_CODE = st.secrets.get("ACCESS_CODE", "")
+
+if ACCESS_CODE:
+    code = st.text_input("테스터 코드", type="password")
+    if code != ACCESS_CODE:
+        st.warning("접근이 제한된 테스트 버전입니다. 테스터 코드를 입력하세요.")
+        st.stop()
+
 
 # ---- CSS: 버튼/헤더/푸터(개발자명) ----
 st.markdown(
@@ -1003,7 +1038,10 @@ notes = st.text_area(
     placeholder="학생의 맥락(학습태도/희망진로/정서·생활/특이사항) 중 지도방침에 반영할 핵심만 적어주세요.",
 )
 
-run = st.button("🚀 학생부 컨설팅 시작", type="primary", use_container_width=True)
+run = st.button("🚀 학생부 컨설팅 시작")
+if run:
+    rate_limit("generate_report", limit=2, per_seconds=60)
+
 
 # =========================================================
 # 14) 실행
