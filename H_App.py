@@ -22,10 +22,8 @@ from typing import Dict, Optional, Tuple
 import requests
 import streamlit as st
 from google import genai
-from google.auth.transport.requests import Request
 from google.genai import types
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -287,47 +285,36 @@ def execute_with_retry(fn, max_retries: int = 6, label: str = "API"):
 # =========================================================
 
 
-def get_google_services() -> Tuple:
-    creds: Optional[Credentials] = None
-    token_path = os.path.join(os.path.dirname(__file__), "token.json")
+def get_google_services():
+    """
+    Streamlit Cloud / 서버 환경용
+    - Service Account 기반 Google Docs / Drive / Sheets 인증
+    """
+    import json
 
-    if os.path.exists(token_path):
-        try:
-            creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-        except Exception:
-            os.remove(token_path)
-            creds = None
+    import streamlit as st
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                execute_with_retry(
-                    lambda: creds.refresh(Request()), label="OAuth Refresh"
-                )
-            except Exception:
-                if os.path.exists(token_path):
-                    os.remove(token_path)
-                creds = None
+    if "GOOGLE_SERVICE_ACCOUNT_JSON" not in st.secrets:
+        st.error("❌ GOOGLE_SERVICE_ACCOUNT_JSON 이 Secrets에 없습니다.")
+        st.stop()
 
-        if not creds:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                OAUTH_CLIENT_SECRET_FILE, SCOPES
-            )
-            creds = flow.run_local_server(
-                host="localhost",
-                port=8080,
-                open_browser=True,
-                access_type="offline",
-                prompt="consent",
-                include_granted_scopes="true",
-            )
+    sa_info = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
 
-        with open(token_path, "w", encoding="utf-8") as f:
-            f.write(creds.to_json())
+    creds = service_account.Credentials.from_service_account_info(
+        sa_info,
+        scopes=[
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/documents",
+            "https://www.googleapis.com/auth/spreadsheets",
+        ],
+    )
 
     drive = build("drive", "v3", credentials=creds)
     docs = build("docs", "v1", credentials=creds)
     sheets = build("sheets", "v4", credentials=creds)
+
     return drive, docs, sheets
 
 
@@ -1177,4 +1164,5 @@ if run:
     with st.expander("✅ 3단계 담임 지도방침"):
         st.markdown(homeroom_md)
     with st.expander("✅ 3단계 담임 지도방침"):
+        st.markdown(homeroom_md)
         st.markdown(homeroom_md)
